@@ -1,0 +1,7 @@
+git
+wget
+htop
+zsh
+starship
+antigen
+lazygit

@@ -1,0 +1,4 @@
+font-fira-code
+font-fira-code-nerd-font
+font-jetbrains-mono
+font-jetbrains-mono-nerd-font

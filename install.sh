@@ -73,4 +73,26 @@ else
   echo "fonts.txt not found. Skipping fonts."
 fi
 
+# Install GNU stow for dotfiles management
+echo_section "Checking for GNU stow"
+if ! command -v stow &>/dev/null; then
+  echo "GNU stow not found. Installing..."
+  brew install stow
+else
+  echo "GNU stow is already installed."
+fi
+
+# Stow dotfiles if the directory exists
+DOTFILES_DIR="dotfiles"
+if [ -d "$DOTFILES_DIR" ]; then
+  echo_section "Stowing dotfiles"
+  for dir in "$DOTFILES_DIR"/*/; do
+    [ -d "$dir" ] || continue
+    echo "Stowing $(basename "$dir")..."
+    stow -d "$DOTFILES_DIR" -t "$HOME" "$(basename "$dir")"
+  done
+else
+  echo "No dotfiles directory found. Skipping stow."
+fi
+
 echo_section "Setup Complete!" 

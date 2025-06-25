@@ -1,3 +1,4 @@
 brave-browser
 ghostty
 gpg-suite
+dropbox

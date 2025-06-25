@@ -1,5 +1,6 @@
 
 theme = catppuccin-frappe
-
+background-opacity = 0.9
+background-blur = true
 font-family = "FiraCode Nerd Font Mono"
 font-size = 14

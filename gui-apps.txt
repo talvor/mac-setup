@@ -1,2 +1,3 @@
 brave-browser
 ghostty
+gpg-suite

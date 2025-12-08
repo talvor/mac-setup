@@ -66,6 +66,9 @@ main() {
     log_info "Step 6: Setting up dotfiles..."
     ./scripts/setup_dotfiles.sh
     
+    log_info "Step 7: Installing scripts to \$HOME/.local/bin/..."
+    ./scripts/install_scripts_to_bin.sh
+    
     log_success "Mac setup completed successfully!"
     log_info "You may need to restart your terminal or source your shell configuration."
 }

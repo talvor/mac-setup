@@ -1,0 +1,134 @@
+#!/bin/bash
+
+# Script to open a development project in tmux with nvim and shell split
+# Usage: dev-project [project-name]
+#
+# Auto-completion Setup:
+# For auto-completion functionality when typing this command, see COMPLETION_SETUP.md
+# - Bash: source dev-project.bash-completion in ~/.bashrc
+# - Zsh: copy dev-project.zsh-completion to ~/.zsh/completions/_dev-project
+
+set -e
+
+PROJECTS_DIR="$HOME/Development/atlassian/projects"
+
+# Check if projects directory exists
+if [ ! -d "$PROJECTS_DIR" ]; then
+  echo "Error: Projects directory does not exist: $PROJECTS_DIR"
+  read -p "Would you like to create it? (y/n) " -n 1 -r
+  echo
+  if [[ $REPLY =~ ^[Yy]$ ]]; then
+    mkdir -p "$PROJECTS_DIR"
+    echo "Created directory: $PROJECTS_DIR"
+    echo "Please add your projects to this directory and run the script again."
+    exit 0
+  else
+    echo "Please create the directory and add your projects to it."
+    exit 1
+  fi
+fi
+
+# Get list of folders in projects directory
+# Include subdirectories of bare git repos with working trees
+folders=()
+while IFS= read -r item; do
+  item_path="$PROJECTS_DIR/$item"
+
+  # Check if this is a bare git repo with working tree
+  if [ -f "$item_path/.git" ] && [ -d "$item_path/.bare" ]; then
+    # This is a bare repo with working tree, add its subdirectories
+    while IFS= read -r subdir; do
+      subfolder=$(basename "$subdir")
+      folders+=("$item/$subfolder")
+    done < <(find "$item_path" -maxdepth 1 -type d ! -name ".git" ! -name ".bare" ! -name "$item" | sort)
+  else
+    # Regular project directory
+    folders+=("$item")
+  fi
+done < <(find "$PROJECTS_DIR" -maxdepth 1 -type d ! -name "projects" | sort | tail -n +2 | xargs -n 1 basename)
+
+# Check if there are any folders
+if [ ${#folders[@]} -eq 0 ]; then
+  echo "Error: No project folders found in $PROJECTS_DIR"
+  echo "Please add your project directories to: $PROJECTS_DIR"
+  exit 1
+fi
+
+# Check if project name was passed as parameter
+if [ -n "$1" ]; then
+  project_name="$1"
+  project_path="$PROJECTS_DIR/$project_name"
+
+  # Check if the project exists
+  if [ -d "$project_path" ]; then
+    selected_folder="$project_name"
+  else
+    echo "Error: Project '$project_name' not found in $PROJECTS_DIR"
+    echo ""
+    echo "Available projects:"
+    for folder in "${folders[@]}"; do
+      echo "  - $folder"
+    done
+    exit 1
+  fi
+else
+  # Use fzf to select a project
+  selected_folder=$(printf '%s\n' "${folders[@]}" | fzf --preview "ls -la '$PROJECTS_DIR/{}'")
+
+  if [ -z "$selected_folder" ]; then
+    echo "No project selected"
+    exit 0
+  fi
+
+  project_path="$PROJECTS_DIR/$selected_folder"
+fi
+
+# Create or reuse "Projects" session
+session_name="Projects"
+window_name="${selected_folder//\//-}"
+
+# Check if session exists
+if ! tmux has-session -t "$session_name" 2>/dev/null; then
+  # Create new session with first project window
+  tmux new-session -d -s "$session_name" -x 200 -y 50 -n "$window_name"
+
+  # Split window into two panes (left and right)
+  tmux split-window -h -t "$session_name"
+
+  # Left pane: open nvim with project folder
+  tmux send-keys -t "$session_name:1.1" "cd '$project_path' && nvim" Enter
+
+  # Right pane: shell prompt in project directory
+  tmux send-keys -t "$session_name:1.2" "cd '$project_path'" Enter
+
+  # Set focus to the right pane (shell)
+  tmux select-pane -t "$session_name:1.2"
+else
+  # Session exists, check if window already exists
+  if ! tmux list-windows -t "$session_name" | grep -q "^[0-9]*: $window_name"; then
+    # Create new window for this project
+    tmux new-window -t "$session_name" -n "$window_name"
+
+    # Split window into two panes (left and right)
+    tmux split-window -h -t "$session_name:$window_name"
+
+    # Left pane: open nvim with project folder
+    tmux send-keys -t "$session_name:$window_name.1" "cd '$project_path' && nvim ." Enter
+
+    # Right pane: shell prompt in project directory
+    tmux send-keys -t "$session_name:$window_name.2" "cd '$project_path'" Enter
+
+    # Set focus to the right pane (shell)
+    tmux select-pane -t "$session_name:$window_name.2"
+  fi
+
+  # Switch to the project window
+  tmux select-window -t "$session_name:$window_name"
+fi
+
+# Attach to session
+if [ -n "$TMUX" ]; then
+  tmux switch-client -t "$session_name"
+else
+  tmux attach-session -t "$session_name"
+fi

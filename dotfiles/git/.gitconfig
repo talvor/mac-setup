@@ -1,0 +1,23 @@
+[user]
+	email = phall@atlassian.com
+	name = Phillip Hall
+	signingkey = A6BBB41F
+[commit]
+	gpgsign = true
+[push]
+	autoSetupRemote = true
+[trace2]
+	eventTarget = af_unix:/Users/phall/.gittrace/trace.sock
+	eventBrief = true
+	eventNesting = 1
+	configparams = custom.metacommands
+[alias]
+	wtadd = !/Users/phall/.local/bin/wtadd.sh
+	wtremove = !/Users/phall/.local/bin/wtremove.sh
+	wtclone = !/Users/phall/.local/bin/wtclone.sh
+	wtlist = !/Users/phall/.local/bin/wtlist.sh
+[filter "lfs"]
+	process = git-lfs filter-process
+	required = true
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f

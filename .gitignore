@@ -47,5 +47,5 @@ Temporary Items
 
 # Personal dotfiles (keep your actual dotfiles private)
 # Remove these lines if you want to include your actual dotfiles
-dotfiles/*/
+#dotfiles/*/
 !dotfiles/*/.*example 

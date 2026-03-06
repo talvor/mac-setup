@@ -1,0 +1,43 @@
+#compdef dev-project
+# Zsh completion script for dev-project command
+# Installation: Add this line to your ~/.zshrc:
+#   fpath=(~/.zsh/completions $fpath)
+#   autoload -Uz compinit && compinit
+# And place this file as: ~/.zsh/completions/_dev-project
+
+_dev_project() {
+    local projects_dir="$HOME/Development/atlassian/projects"
+    local projects=()
+    
+    # Check if projects directory exists
+    if [ ! -d "$projects_dir" ]; then
+        return 0
+    fi
+    
+    # Get list of folders in projects directory
+    while IFS= read -r item; do
+        local item_path="$projects_dir/$item"
+        
+        # Check if this is a bare git repo with working tree
+        if [ -f "$item_path/.git" ] && [ -d "$item_path/.bare" ]; then
+            # This is a bare repo with working tree, add its subdirectories
+            while IFS= read -r subdir; do
+                local subfolder=$(basename "$subdir")
+                projects+=("$item/$subfolder")
+            done < <(find "$item_path" -maxdepth 1 -type d ! -name ".git" ! -name ".bare" ! -name "$item" | sort)
+        else
+            # Regular project directory
+            projects+=("$item")
+        fi
+    done < <(find "$projects_dir" -maxdepth 1 -type d ! -name "projects" | sort | tail -n +2 | xargs -n 1 basename 2>/dev/null)
+    
+    # Create completion descriptions
+    local -a project_descriptions
+    for project in "${projects[@]}"; do
+        project_descriptions+=("$project:Open project in tmux with nvim")
+    done
+    
+    _describe 'projects' project_descriptions
+}
+
+_dev_project

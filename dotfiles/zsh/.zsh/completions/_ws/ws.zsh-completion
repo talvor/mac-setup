@@ -1,0 +1,36 @@
+#compdef ws
+#
+# Zsh completion script for the 'ws' workspace selector function.
+#
+# Installation:
+#   Place (or symlink) this file as ~/.zsh/completions/_ws
+#   Then ensure your ~/.zshrc contains:
+#     fpath=(~/.zsh/completions $fpath)
+#     autoload -Uz compinit && compinit
+#
+# Note: If you source ~/bin/ws (or ~/.local/bin/ws) in your shell, the
+# completion is also registered inline — this standalone file is an
+# alternative for users who prefer to manage completions separately.
+
+_ws() {
+    local workspace_dir="${WORKSPACE_DIR:-$HOME/Development/Workspaces}"
+
+    # Bail out early if the workspace directory doesn't exist
+    if [[ ! -d "$workspace_dir" ]]; then
+        return 0
+    fi
+
+    local -a workspaces
+
+    while IFS= read -r ws_name; do
+        workspaces+=("${ws_name}:Workspace at ${workspace_dir}/${ws_name}")
+    done < <(
+        find "$workspace_dir" -maxdepth 1 -mindepth 1 -type d \
+            | sort \
+            | xargs -n 1 basename 2>/dev/null
+    )
+
+    _describe 'workspaces' workspaces
+}
+
+_ws

@@ -6,7 +6,7 @@ alias edit-setup="nvim ~/Development/personal/mac-setup"
 alias ls="eza --icons=always"
 
 alias bashly='docker run --rm -it --user $(id -u):$(id -g) --volume "$PWD:/app" dannyben/bashly'
-# alias httpyac="docker run -it -v ${PWD}:/data ghcr.io/anweber/httpyac:latest"
+alias httpyac="docker run --rm -it -v ${PWD}:/data ghcr.io/anweber/httpyac:latest"
 
 alias k='kubectl'
 

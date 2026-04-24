@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+#
+# ws - Workspace Selector
+#
+# Provides an interactive way to select a workspace directory and change into it
+# using fzf for fuzzy selection.
+#
+# Usage (as a shell function - must be sourced, not executed directly):
+#   ws [workspace-name]
+#
+# Configuration:
+#   WORKSPACE_DIR  - Directory containing workspaces (default: $HOME/Development/Workspaces)
+#
+# Shell Integration Setup:
+# ─────────────────────────────────────────────────────────────────────────────
+# Because 'ws' needs to change the current shell's working directory, it must
+# be loaded as a shell function rather than run as a subprocess.
+#
+# Bash - add to ~/.bashrc:
+#   source /path/to/bin/ws
+#   # Or, if installed to ~/.local/bin:
+#   source ~/.local/bin/ws
+#
+#   # For tab completion, also source the bash completion file:
+#   source /path/to/dotfiles/bash/completions/ws.bash-completion
+#
+# Zsh - add to ~/.zshrc:
+#   source /path/to/bin/ws
+#   # Or, if installed to ~/.local/bin:
+#   source ~/.local/bin/ws
+#
+#   # For tab completion, place the zsh completion file in your fpath:
+#   # (e.g. copy _ws to ~/.zsh/completions/_ws)
+#   fpath=(~/.zsh/completions $fpath)
+#   autoload -Uz compinit && compinit
+# ─────────────────────────────────────────────────────────────────────────────
+
+_ws_list_entries() {
+  local base_dir="$1"
+  find "$base_dir" -maxdepth 1 -mindepth 1 -type d | sort | while IFS= read -r dir; do
+    name="$(basename "$dir")"
+    if [ -d "$dir/.bare" ]; then
+      # Git worktree workspace — list its worktree subdirectories
+      find "$dir" -maxdepth 1 -mindepth 1 -type d | sort | while IFS= read -r wt; do
+        wt_name="$(basename "$wt")"
+        [ "$wt_name" = ".bare" ] && continue
+        echo "$name/$wt_name"
+      done
+    else
+      echo "$name"
+    fi
+  done
+}
+
+ws() {
+  local workspace_dir="${WORKSPACE_DIR:-$HOME/Development/Workspaces}"
+
+  # Check if workspace directory exists
+  if [ ! -d "$workspace_dir" ]; then
+    echo "Error: Workspace directory does not exist: $workspace_dir" >&2
+    echo "Set the WORKSPACE_DIR environment variable to override the default location." >&2
+    return 1
+  fi
+
+  # Check if fzf is available
+  if ! command -v fzf >/dev/null 2>&1; then
+    echo "Error: fzf is not installed or not in PATH." >&2
+    echo "Install it with: brew install fzf" >&2
+    return 1
+  fi
+
+  local selected_workspace
+
+  if [ -n "$1" ]; then
+    # Workspace name provided as argument — validate it exists
+    local target="$workspace_dir/$1"
+    if [ ! -d "$target" ]; then
+      echo "Error: Workspace '$1' not found in $workspace_dir" >&2
+      echo "" >&2
+      echo "Available workspaces:" >&2
+      _ws_list_entries "$workspace_dir" | sed 's/^/  - /' >&2
+      return 1
+    fi
+    selected_workspace="$1"
+  else
+    # Use fzf to interactively select a workspace
+    selected_workspace=$(
+      _ws_list_entries "$workspace_dir" |
+        fzf \
+          --prompt="Workspace> " \
+          --header="Select a workspace (WORKSPACE_DIR: $workspace_dir)" \
+          --preview="ls -la '$workspace_dir/{}'" \
+          --preview-window=right:50%
+    )
+
+    if [ -z "$selected_workspace" ]; then
+      # User cancelled fzf selection
+      return 0
+    fi
+  fi
+
+  local workspace_path="$workspace_dir/$selected_workspace"
+  local session_name="Projects"
+  local window_name="${selected_workspace//\//-}"
+
+  # Check if tmux session exists
+  if ! tmux has-session -t "$session_name" 2>/dev/null; then
+    # Create new session with first workspace window
+    tmux new-session -d -s "$session_name" -x 200 -y 50 -n "$window_name"
+    tmux send-keys -t "$session_name:1" "cd '$workspace_path'" Enter
+  else
+    # Session exists — create window if it doesn't already exist
+    if ! tmux list-windows -t "$session_name" | grep -q "^[0-9]*: $window_name"; then
+      tmux new-window -t "$session_name" -n "$window_name"
+      tmux send-keys -t "$session_name:$window_name" "cd '$workspace_path'" Enter
+    fi
+
+    # Switch to the workspace window
+    tmux select-window -t "$session_name:$window_name"
+  fi
+
+  # Attach or switch to the session
+  if [ -n "$TMUX" ]; then
+    tmux switch-client -t "$session_name"
+  else
+    tmux attach-session -t "$session_name"
+  fi
+}
+
+# Only define completions when the file is being sourced (not executed)
+# We detect this by checking if the script is being run directly.
+# When sourced in bash: $0 is the shell name (e.g. "bash" or "-bash")
+# When sourced in zsh:  $0 is the shell name (e.g. "zsh") or the script name
+#   but ZSH_VERSION is set.
+# When executed directly: $0 is the script path.
+_ws_is_sourced() {
+  # In bash
+  if [ -n "$BASH_VERSION" ]; then
+    [[ "${BASH_SOURCE[0]}" != "$0" ]]
+    return $?
+  fi
+  # In zsh, this file is always being sourced when defining the function
+  if [ -n "$ZSH_VERSION" ]; then
+    return 0
+  fi
+  return 1
+}
+
+# ─── Bash completion ────────────────────────────────────────────────────────
+
+_ws_bash_completion() {
+  local workspace_dir="${WORKSPACE_DIR:-$HOME/Development/Workspaces}"
+  local cur="${COMP_WORDS[COMP_CWORD]}"
+
+  if [ ! -d "$workspace_dir" ]; then
+    return 0
+  fi
+
+  local workspaces
+  workspaces=$(_ws_list_entries "$workspace_dir")
+
+  # shellcheck disable=SC2207
+  COMPREPLY=($(compgen -W "$workspaces" -- "$cur"))
+}
+
+# ─── Zsh completion (inline) ────────────────────────────────────────────────
+
+_ws_zsh_completion() {
+  local workspace_dir="${WORKSPACE_DIR:-$HOME/Development/Workspaces}"
+
+  if [ ! -d "$workspace_dir" ]; then
+    return 0
+  fi
+
+  local -a workspaces
+  while IFS= read -r ws_name; do
+    workspaces+=("$ws_name")
+  done < <(_ws_list_entries "$workspace_dir")
+
+  compadd -a workspaces
+}
+
+# Register completions for the current shell
+if [ -n "$BASH_VERSION" ]; then
+  complete -F _ws_bash_completion ws
+elif [ -n "$ZSH_VERSION" ]; then
+  echo "Loading _ws_zsh_completion"
+  compdef _ws_zsh_completion ws
+fi

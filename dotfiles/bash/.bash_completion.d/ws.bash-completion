@@ -1,0 +1,30 @@
+# Bash completion script for the 'ws' workspace selector function.
+#
+# Installation — add to ~/.bashrc:
+#   source /path/to/dotfiles/bash/completions/ws.bash-completion
+#
+# Note: If you source ~/bin/ws (or ~/.local/bin/ws) in your shell, the
+# completion is also registered inline — this standalone file is an
+# alternative for users who prefer to manage completions separately.
+
+_ws_bash_completion() {
+    local workspace_dir="${WORKSPACE_DIR:-$HOME/Development/Workspaces}"
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+
+    # Bail out early if the workspace directory doesn't exist
+    if [ ! -d "$workspace_dir" ]; then
+        return 0
+    fi
+
+    local workspaces
+    workspaces=$(
+        find "$workspace_dir" -maxdepth 1 -mindepth 1 -type d \
+            | sort \
+            | xargs -n 1 basename 2>/dev/null
+    )
+
+    # shellcheck disable=SC2207
+    COMPREPLY=($(compgen -W "$workspaces" -- "$cur"))
+}
+
+complete -F _ws_bash_completion ws

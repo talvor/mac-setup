@@ -46,9 +46,6 @@ load-nvmrc() {
 add-zsh-hook chpwd load-nvmrc
 load-nvmrc
 
-fpath=(~/.zsh/completions $fpath)
-autoload -Uz compinit && compinit
-
 export GPG_TTY=$(tty)
 
 export PATH="/Users/phall/.orbit/bin:$PATH"
@@ -56,5 +53,16 @@ export PATH="/Users/phall/.orbit/bin:$PATH"
 # Exports required for KITT++
 export KUBECONFIG=$(atlas kitt context:create --pid=$$)
 export HELM_DRIVER=configmap
-export SSH_AUTH_SOCK=/Users/phall/Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh
+
+export PYENV_ROOT="$HOME/.pyenv"
+[[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init - zsh)"
+
+#THIS MUST BE AT THE END OF THE FILE FOR SDKMAN TO WORK!!!
+export SDKMAN_DIR="$HOME/.sdkman"
+[[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
+
+export JAVA_HOME="$HOME/.sdkman/candidates/java/21.0.3-amzn"
+
+export USER=$(whoami)
 

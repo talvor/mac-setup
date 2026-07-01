@@ -9,7 +9,13 @@
 #   ws [workspace-name]
 #
 # Configuration:
-#   WORKSPACE_DIR  - Directory containing workspaces (default: $HOME/Development/Workspaces)
+#   WORKSPACE_DIR  - Directory containing workspaces (default: $HOME/atlassian)
+#   WS_MODE        - How to open the workspace:
+#                      tmux (default) - open in a tmux session window
+#                      cmux           - open as a new cmux workspace via
+#                                       `cmux workspace create`
+#                      supacode       - focus/open the workspace in supacode via
+#                                       `supacode worktree focus` / `repo open`
 #
 # Shell Integration Setup:
 # ─────────────────────────────────────────────────────────────────────────────
@@ -52,8 +58,112 @@ _ws_list_entries() {
   done
 }
 
+# Percent-encode a string the way supacode encodes worktree paths: only the
+# unreserved characters are left literal, everything else (notably '/') becomes
+# %XX. Works in both bash and zsh.
+_ws_urlencode() {
+  local rest="$1" out="" c
+  while [ -n "$rest" ]; do
+    c="${rest%"${rest#?}"}" # first character of $rest
+    rest="${rest#?}"        # drop the first character
+    case "$c" in
+    [a-zA-Z0-9._~-]) out="$out$c" ;;
+    *) out="$out$(printf '%%%02X' "'$c")" ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+_ws_open_supacode() {
+  local workspace_path="$1"
+  local window_name="$2"
+
+  if ! command -v supacode >/dev/null 2>&1; then
+    echo "Error: supacode is not installed or not in PATH." >&2
+    return 1
+  fi
+
+  # supacode identifies a worktree by its URL-encoded absolute path (with a
+  # trailing slash) — the same value that `worktree list` prints.
+  local target
+  target="$(_ws_urlencode "$workspace_path/")"
+
+  # If a worktree for this path already exists, focus it; else open it.
+  local existing
+  existing="$(supacode worktree list 2>/dev/null | grep -Fx "$target")"
+
+  if [ -n "$existing" ]; then
+    supacode worktree focus --worktree "$existing"
+  else
+    supacode repo open "$workspace_path"
+    sleep 2
+    existing="$(supacode worktree list 2>/dev/null | grep -Fx "$target")"
+    supacode worktree focus --worktree "$existing"
+  fi
+}
+
+_ws_open_cmux() {
+  local workspace_path="$1"
+  local window_name="$2"
+
+  if ! command -v cmux >/dev/null 2>&1; then
+    echo "Error: cmux is not installed or not in PATH." >&2
+    return 1
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "Error: jq is not installed or not in PATH." >&2
+    echo "Install it with: brew install jq" >&2
+    return 1
+  fi
+
+  # If a workspace with this name already exists, switch to it; else create.
+  local cmux_name="[WS] $window_name"
+  local existing_ref
+  existing_ref=$(cmux workspace list --json 2>/dev/null |
+    jq -r --arg name "$cmux_name" \
+      'first(.workspaces[] | select(.title == $name) | .ref) // empty')
+
+  if [ -n "$existing_ref" ]; then
+    cmux workspace select "$existing_ref"
+  else
+    cmux workspace create \
+      --name "$cmux_name" \
+      --cwd "$workspace_path" \
+      --focus true
+  fi
+}
+
+_ws_open_tmux() {
+  local workspace_path="$1"
+  local window_name="$2"
+  local session_name="Projects"
+
+  # Check if tmux session exists
+  if ! tmux has-session -t "$session_name" 2>/dev/null; then
+    # Create new session with first workspace window
+    tmux new-session -d -s "$session_name" -x 200 -y 50 -n "$window_name"
+    tmux send-keys -t "$session_name:1" "cd '$workspace_path'" Enter
+  else
+    # Session exists — create window if it doesn't already exist
+    if ! tmux list-windows -t "$session_name" | grep -q "^[0-9]*: $window_name"; then
+      tmux new-window -t "$session_name" -n "$window_name"
+      tmux send-keys -t "$session_name:$window_name" "cd '$workspace_path'" Enter
+    fi
+
+    # Switch to the workspace window
+    tmux select-window -t "$session_name:$window_name"
+  fi
+
+  # Attach or switch to the session
+  if [ -n "$TMUX" ]; then
+    tmux switch-client -t "$session_name"
+  else
+    tmux attach-session -t "$session_name"
+  fi
+}
+
 ws() {
-  local workspace_dir="${WORKSPACE_DIR:-$HOME/Development/Workspaces}"
+  local workspace_dir="${WORKSPACE_DIR:-$HOME/atlassian}"
 
   # Check if workspace directory exists
   if [ ! -d "$workspace_dir" ]; then
@@ -100,31 +210,23 @@ ws() {
   fi
 
   local workspace_path="$workspace_dir/$selected_workspace"
-  local session_name="Projects"
   local window_name="${selected_workspace//\//-}"
 
-  # Check if tmux session exists
-  if ! tmux has-session -t "$session_name" 2>/dev/null; then
-    # Create new session with first workspace window
-    tmux new-session -d -s "$session_name" -x 200 -y 50 -n "$window_name"
-    tmux send-keys -t "$session_name:1" "cd '$workspace_path'" Enter
-  else
-    # Session exists — create window if it doesn't already exist
-    if ! tmux list-windows -t "$session_name" | grep -q "^[0-9]*: $window_name"; then
-      tmux new-window -t "$session_name" -n "$window_name"
-      tmux send-keys -t "$session_name:$window_name" "cd '$workspace_path'" Enter
-    fi
-
-    # Switch to the workspace window
-    tmux select-window -t "$session_name:$window_name"
-  fi
-
-  # Attach or switch to the session
-  if [ -n "$TMUX" ]; then
-    tmux switch-client -t "$session_name"
-  else
-    tmux attach-session -t "$session_name"
-  fi
+  case "${WS_MODE:-tmux}" in
+  cmux)
+    _ws_open_cmux "$workspace_path" "$window_name"
+    ;;
+  tmux)
+    _ws_open_tmux "$workspace_path" "$window_name"
+    ;;
+  supacode)
+    _ws_open_supacode "$workspace_path" "$window_name"
+    ;;
+  *)
+    echo "Error: Unknown WS_MODE '$WS_MODE' (expected 'tmux', 'cmux', or 'supacode')." >&2
+    return 1
+    ;;
+  esac
 }
 
 # Only define completions when the file is being sourced (not executed)
@@ -149,7 +251,7 @@ _ws_is_sourced() {
 # ─── Bash completion ────────────────────────────────────────────────────────
 
 _ws_bash_completion() {
-  local workspace_dir="${WORKSPACE_DIR:-$HOME/Development/Workspaces}"
+  local workspace_dir="${WORKSPACE_DIR:-$HOME/atlassian}"
   local cur="${COMP_WORDS[COMP_CWORD]}"
 
   if [ ! -d "$workspace_dir" ]; then
@@ -166,7 +268,7 @@ _ws_bash_completion() {
 # ─── Zsh completion (inline) ────────────────────────────────────────────────
 
 _ws_zsh_completion() {
-  local workspace_dir="${WORKSPACE_DIR:-$HOME/Development/Workspaces}"
+  local workspace_dir="${WORKSPACE_DIR:-$HOME/atlassian}"
 
   if [ ! -d "$workspace_dir" ]; then
     return 0
@@ -184,6 +286,5 @@ _ws_zsh_completion() {
 if [ -n "$BASH_VERSION" ]; then
   complete -F _ws_bash_completion ws
 elif [ -n "$ZSH_VERSION" ]; then
-  echo "Loading _ws_zsh_completion"
   compdef _ws_zsh_completion ws
 fi

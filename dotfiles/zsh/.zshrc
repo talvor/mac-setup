@@ -15,11 +15,17 @@ setopt hist_verify
 bindkey '^[[A' history-search-backward
 bindkey '^[[B' history-search-forward
 
-# if [ "$TERM_PROGRAM" != "vscode" ]; then
-  # source $HOME/.tmux.d/startup.sh 
-#fi
+if [ "${TERM_PROGRAM:-}" = "supacode" ]; then
+  export WS_MODE=supacode
+elif [ -n "${CMUX_WORKSPACE_ID:-}" ] && [ -n "${CMUX_SURFACE_ID:-}" ]; then
+  export WS_MODE=cmux
+else
+  export WS_MODE=tmux
+fi
 
-source $HOME/.tmux.d/startup.sh
+if [ "$WS_MODE" = "tmux" ]; then
+  source "$HOME/.tmux.d/startup.sh"
+fi
 
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
@@ -65,4 +71,3 @@ export SDKMAN_DIR="$HOME/.sdkman"
 export JAVA_HOME="$HOME/.sdkman/candidates/java/21.0.3-amzn"
 
 export USER=$(whoami)
-
